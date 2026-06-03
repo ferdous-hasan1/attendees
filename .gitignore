@@ -1,0 +1,47 @@
+# --- Frontend (React/Node) ---
+node_modules/
+dist/
+dist-ssr/
+*.local
+.eslintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- Backend (Python/FastAPI) ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.env
+
+# --- Database & Biometrics (CRITICAL) ---
+# Do not upload the local SQLite database
+*.db
+*.sqlite3
+
+# Do not upload personal student/teacher photos
+# This keeps the folder structure but ignores the images
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# --- AI/ML Models ---
+# Large model files should usually be ignored or handled via Git LFS
+*.weights
+*.h5
+*.pth
+*.clf
+*.pkl
+
+# --- OS & IDE Files ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo

@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* --- Global Dark Theme Base --- */
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  background-color: #0f172a; /* Dark Slate background */
+  color: #ffffff;
+}
+
+/* --- 1. The Cyberpunk Scanner Line --- */
+@keyframes scan-light {
+  0% { top: 0%; opacity: 0; }
+  10% { opacity: 1; box-shadow: 0 0 15px #06b6d4; } /* Cyan Glow */
+  90% { opacity: 1; box-shadow: 0 0 15px #06b6d4; }
+  100% { top: 100%; opacity: 0; }
+}
+
+.animate-scanner {
+  position: absolute;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(to right, transparent, #06b6d4, transparent);
+  animation: scan-light 2.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  z-index: 20;
+}
+
+/* --- 2. Glassmorphism Card (Frosted Glass) --- */
+.glass-card {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+/* --- 3. Bouncy Pop-up Animation --- */
+@keyframes pop-in {
+  0% { opacity: 0; transform: scale(0.9) translateY(20px); }
+  60% { opacity: 1; transform: scale(1.05) translateY(0); }
+  100% { transform: scale(1); }
+}
+
+.animate-pop-in {
+  animation: pop-in 0.4s ease-out forwards;
+}
+
+/* --- 4. Pulse Effect for Status Dot --- */
+@keyframes pulse-glow {
+  0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+  70% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s infinite;
+}
