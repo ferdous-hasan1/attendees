@@ -81,5 +81,4 @@ const response = await axios.get(`http://${window.location.hostname}:8000/teache
     </div>
   );
 };
-
 export default TeacherQR;

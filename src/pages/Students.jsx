@@ -209,12 +209,13 @@ function Students({ showToast }) {
                                 <td className="p-4">
                                     <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-bold">{student.department}</span>
                                 </td>
-                                <td className="p-4">
-                                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onClick={() => handleEditClick(student)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><Edit2 size={16} /></button>
-                                        <button onClick={() => handleDelete(student.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={16} /></button>
-                                    </div>
-                                </td>
+                                {/* ✅ Buttons are now permanently visible! ✅ */}
+<td className="p-4">
+    <div className="flex gap-2">
+        <button onClick={() => handleEditClick(student)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><Edit2 size={16} /></button>
+        <button onClick={() => handleDelete(student.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={16} /></button>
+    </div>
+</td>
                             </tr>
                         ))}
                     </tbody>

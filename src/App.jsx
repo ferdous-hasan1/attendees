@@ -26,16 +26,20 @@ const App = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userEmail, setUserEmail] = useState(null);
 
-  // --- JWT SECURITY VAULT PERSISTENCE ---
+  // --- RESTORE SESSION ON REFRESH ---
   useEffect(() => {
-    const token = localStorage.getItem('adminToken');
-    if (token) {
-      // In a real app, you'd decode the JWT to get the actual role
-      setUserRole('admin'); 
+    const isLoggedIn = localStorage.getItem('isLoggedIn');
+    const savedRole = localStorage.getItem('userRole');
+    const savedEmail = localStorage.getItem('userEmail');
+if (isLoggedIn && savedRole) {
+      setUserRole(savedRole);
+      setUserEmail(savedEmail);
       setCurrentView('app');
+      
+      // 👇 FIXED: Everyone lands on their respective Overview first!
+      setActiveTab('dashboard'); 
     }
   }, []);
-// ... rest of your code stays exactly the same
 
   const showToast = (message, type) => {
     console.log("Notification:", message);
@@ -46,14 +50,27 @@ const App = () => {
 
   const handleLogin = (role, email) => {
     setUserRole(role);
-    setUserEmail(email); // <-- Saves the student's email to memory!
+    setUserEmail(email); 
     setCurrentView('app');
+    
+    // 👇 FIXED: Everyone lands on their respective Overview first!
     setActiveTab('dashboard');
+
+    // Save these to local storage so a refresh doesn't wipe them out
+    localStorage.setItem('userRole', role);
+    localStorage.setItem('userEmail', email);
+    localStorage.setItem('isLoggedIn', 'true');
   };
 
   const handleLogout = () => {
+    // 👇 NEW: Clear all user traces
     localStorage.removeItem('adminToken'); 
+    localStorage.removeItem('userRole');
+    localStorage.removeItem('userEmail');
+    localStorage.removeItem('isLoggedIn');
+    
     setUserRole(null);
+    setUserEmail(null);
     setCurrentView('landing');
   };
 
@@ -120,7 +137,7 @@ const App = () => {
               {/* --- NEW QR & STUDENT PORTAL ROUTES --- */}
               {activeTab === 'teacher-qr' && <TeacherQR />}
               {/* 👇 THE FIX: Pass the userEmail into the portal! 👇 */}
-{activeTab === 'student-portal' && <StudentPortal userEmail={userEmail} />}
+              {activeTab === 'student-portal' && <StudentPortal userEmail={userEmail} />}
               
             </motion.div>
           </AnimatePresence>

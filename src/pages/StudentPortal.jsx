@@ -3,11 +3,45 @@ import axios from 'axios';
 import { Scanner } from '@yudiel/react-qr-scanner';
 import { MapPin, ScanLine, CheckCircle, AlertTriangle, Keyboard, Camera } from 'lucide-react';
 
-const StudentPortal = () => {
+// 👇 FIXED: Added userEmail as a prop so it knows who is logged in!
+const StudentPortal = ({ userEmail }) => {
   const [mode, setMode] = useState('scan'); // 'scan' or 'manual'
   const [totpInput, setTotpInput] = useState('');
   const [status, setStatus] = useState('idle'); 
   const [errorMessage, setErrorMessage] = useState('');
+
+  // --- NEW: PREMIUM AUDIO & VOICE ALERTS ---
+  const playSuccessAudio = () => {
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+
+      osc.type = 'sine'; 
+      osc.frequency.setValueAtTime(523.25, ctx.currentTime); 
+      osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1); 
+
+      gainNode.gain.setValueAtTime(0, ctx.currentTime);
+      gainNode.gain.linearRampToValueAtTime(0.5, ctx.currentTime + 0.05);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+
+      osc.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.5);
+    } catch (e) {
+      console.log("Audio not supported");
+    }
+
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel(); 
+      const utterance = new SpeechSynthesisUtterance("Attendance marked.");
+      utterance.rate = 1.0; 
+      utterance.pitch = 1.1; 
+      window.speechSynthesis.speak(utterance);
+    }
+  };
 
   // This function handles BOTH manual typing and automatic camera scanning
   const handleMarkAttendance = (codeToSubmit) => {
@@ -22,32 +56,37 @@ const StudentPortal = () => {
        async (position) => {
             const { latitude, longitude } = position.coords;
             try {
-                // We send the code to Python
+                // 👇 FIXED: Sending the actual student's email instead of 'CS001'
                 const response = await axios.post('http://192.168.1.2:8000/attendance/qr-mark', {
-                    student_id: 'CS001', 
+                    email: userEmail, 
                     totp_code: codeToSubmit,
                     latitude: latitude,
                     longitude: longitude
                 });
 
-                // If Python says 200 OK, we show success!
+                playSuccessAudio();
                 setStatus('success');
                 
             } catch (error) {
-                // If Python throws a 403 (Location Denied or Code Expired)
                 setStatus('error');
-                // We grab the exact error message Python sent and show it to the student
-                setErrorMessage(
-                    error.response?.data?.detail || "An unexpected error occurred."
-                );
+                
+                // --- CRASH-PROOF ERROR EXTRACTOR ---
+                const detail = error.response?.data?.detail;
+                let finalMessage = "An unexpected error occurred.";
+                
+                if (Array.isArray(detail)) {
+                    finalMessage = `Validation Error: ${detail[0].loc[1]} - ${detail[0].msg}`;
+                } else if (typeof detail === 'string') {
+                    finalMessage = detail;
+                }
+                
+                setErrorMessage(finalMessage);
             }
         },
         (error) => {
-            // This catches if the student clicks "Block" when asked for location permissions
             setStatus('error');
             setErrorMessage('Location access was denied. Please enable GPS.');
         },
-        // Geolocation options: ask for high accuracy and don't use cached locations
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   };
@@ -82,14 +121,30 @@ const StudentPortal = () => {
         </div>
 
         {/* THE CAMERA SCANNER */}
+       {/* THE CAMERA SCANNER */}
+       {/* THE CAMERA SCANNER */}
         {mode === 'scan' && status === 'idle' && (
             <div className="rounded-2xl overflow-hidden border-4 border-slate-100 mb-6 relative bg-black">
                 <Scanner 
-                    onResult={(text) => {
-                        // When the camera reads the QR, it instantly submits!
-                        if (text) {
-                            setTotpInput(text);
-                            handleMarkAttendance(text);
+                    onResult={(result) => {
+                        if (result) {
+                            // --- CRASH-PROOF TEXT EXTRACTOR ---
+                            let rawText = "";
+                            
+                            if (typeof result === "string") {
+                                rawText = result; // Older library versions
+                            } else if (Array.isArray(result) && result[0]?.rawValue) {
+                                rawText = result[0].rawValue; // Newer library versions
+                            } else if (result?.text) {
+                                rawText = result.text; // Fallback
+                            }
+
+                            // If we successfully found the text, clean it and submit!
+                            if (rawText) {
+                                const cleanCode = rawText.replace("ATTENDEASE-", "").trim();
+                                setTotpInput(cleanCode);
+                                handleMarkAttendance(cleanCode);
+                            }
                         }
                     }}
                     onError={(error) => console.log(error?.message)}
@@ -113,7 +168,7 @@ const StudentPortal = () => {
             />
         )}
 
-        {/* Manual Submit Button (Only shows if typing manually or loading) */}
+        {/* Manual Submit Button */}
         {mode === 'manual' && status === 'idle' && (
             <button 
                 onClick={() => handleMarkAttendance(totpInput)}
