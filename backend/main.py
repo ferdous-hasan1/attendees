@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Request, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, joinedload
@@ -62,11 +62,34 @@ def create_access_token(data: dict):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
+@app.get("/profile")
+def get_profile(email: str, role: str, db: Session = Depends(database.get_db)):
+    if role == "admin":
+        # Admin is hardcoded in login
+        if email == "admin@technoindia.com":
+            return {"name": "Admin User", "email": "admin@technoindia.com"}
+        raise HTTPException(status_code=404, detail="Admin not found")
+        
+    elif role == "teacher":
+        teacher = db.query(models.Teacher).filter(models.Teacher.email == email).first()
+        if not teacher:
+            raise HTTPException(status_code=404, detail="Teacher not found")
+        return {"name": teacher.full_name, "email": teacher.email}
+        
+    elif role == "student":
+        student = db.query(models.Student).filter(models.Student.email == email).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found")
+        return {"name": student.full_name, "email": student.email}
+        
+    raise HTTPException(status_code=400, detail="Invalid role")
+
+
 @app.post("/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(database.get_db)):
     
     # 1. CHECK ADMIN VAULT (Hardcoded for maximum security)
-    if form_data.username == "admin@technoindia.com" and form_data.password == "attendease123":
+    if form_data.username == "admin@technoindia.com" and form_data.password == "1234":
         # Notice we inject the "role" into the token!
         access_token = create_access_token(data={"sub": form_data.username, "role": "admin"})
         return {"access_token": access_token, "token_type": "bearer", "role": "admin"}
@@ -313,7 +336,28 @@ def delete_student(student_id: int, db: Session =Depends(database.get_db)):
     return {"message": "Deleted"}
 
 @app.post("/attendance/mark")
-async def mark_attendance(file: UploadFile = File(...), db: Session = Depends(database.get_db)):
+async def mark_attendance(request: Request, file: UploadFile = File(...), db: Session = Depends(database.get_db)):
+    # --- NETWORK RESTRICTED GUARD ---
+    client_ip = request.client.host
+    auth_header = request.headers.get("Authorization")
+    
+    is_authorized = False
+    
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            role = payload.get("role")
+            if role in ["admin", "teacher"]:
+                is_authorized = True
+        except jwt.PyJWTError:
+            pass
+            
+    if not is_authorized:
+        if not (client_ip.startswith("192.168.") or client_ip == "127.0.0.1" or client_ip == "localhost"):
+            raise HTTPException(status_code=403, detail=f"Off-Network Request Blocked. Your IP ({client_ip}) is not on the campus network.")
+    # --- END GUARD ---
+
     file_bytes = await file.read()
     try:
         # 1. LOAD IMAGE
@@ -413,7 +457,7 @@ async def mark_attendance(file: UploadFile = File(...), db: Session = Depends(da
                     ).first()
                     
                     if not existing_log:
-                        # FIRST SCAN = ENTRY
+                        # FIRST SCAN = ENTRY ONLY
                         new_log = models.TeacherAttendance(
                             teacher_id=teacher.id, 
                             date=today, 
@@ -423,17 +467,10 @@ async def mark_attendance(file: UploadFile = File(...), db: Session = Depends(da
                         db.add(new_log)
                         db.commit()
                         return {"status": "success", "type": "teacher", "name": teacher.full_name, "id_value": teacher.employee_id, "message": "Entry Recorded"}
-                        
-                    elif not existing_log.exit_time:
-                        # SECOND SCAN = EXIT
-                        existing_log.exit_time = current_time
-                        db.commit()
-                        return {"status": "success", "type": "teacher", "name": teacher.full_name, "id_value": teacher.employee_id, "message": "Exit Recorded"}
-                        
                     else:
-                        # THIRD SCAN = ALREADY DONE
+                        # ALREADY SIGNED IN - Exit must be done from Dashboard
                         db.commit()
-                        return {"status": "already_marked", "type": "teacher", "name": teacher.full_name, "id_value": teacher.employee_id, "message": "Shift Completed"}
+                        return {"status": "already_marked", "type": "teacher", "name": teacher.full_name, "id_value": teacher.employee_id, "message": "Already Signed In. Use Dashboard to Sign Out."}
                         
             except: continue
 
@@ -588,6 +625,8 @@ from typing import Optional
 # --- UPGRADED DASHBOARD STATS ENDPOINT (WITH FILTERS) ---
 @app.get("/dashboard/stats")
 def get_dashboard_stats(
+    role: str = Query("admin"),
+    email: Optional[str] = Query(None),
     dept: Optional[str] = None, 
     batch: Optional[str] = None, 
     db: Session = Depends(database.get_db)
@@ -610,23 +649,35 @@ def get_dashboard_stats(
     if batch and batch != "All":
         student_query = student_query.filter(models.Student.batch == batch)
         student_att_query = student_att_query.filter(models.Student.batch == batch)
-        # Note: Teachers don't have batches, so we don't filter them by batch!
 
-    # 3. Calculate Totals
+    # 3. RBAC Filtering
+    if role == "student" and email:
+        student_query = student_query.filter(models.Student.email == email)
+        student_att_query = student_att_query.filter(models.Student.email == email)
+        # Students shouldn't see teacher data
+        teacher_query = teacher_query.filter(models.Teacher.id == -1)
+        teacher_att_query = teacher_att_query.filter(models.TeacherAttendance.teacher_id == -1)
+    elif role == "teacher":
+        # Teachers shouldn't see other teachers' data
+        teacher_query = teacher_query.filter(models.Teacher.id == -1)
+        teacher_att_query = teacher_att_query.filter(models.TeacherAttendance.teacher_id == -1)
+
+    # 4. Calculate Totals
     total_students = student_query.count()
     present_students = student_att_query.distinct(models.Attendance.student_id).count()
     
     total_teachers = teacher_query.count()
     present_teachers = teacher_att_query.distinct(models.TeacherAttendance.teacher_id).count()
 
-    # 4. Fetch Recent Logs for the Tables
-    recent_students = student_att_query.order_by(models.Attendance.id.desc()).limit(5).all()
-    s_logs = [{"name": l.student.full_name, "id": l.student.roll_number, "dept": l.student.department, "time": l.time, "status": l.status} for l in recent_students]
+    # 5. Fetch Recent Logs for the Tables
+    limit = 20 if role != "admin" else 15
+    recent_students = student_att_query.order_by(models.Attendance.id.desc()).limit(limit).all()
+    s_logs = [{"db_id": l.student.id, "name": l.student.full_name, "id": l.student.roll_number, "dept": l.student.department, "time": l.time, "status": l.status} for l in recent_students]
     
-    recent_teachers = teacher_att_query.order_by(models.TeacherAttendance.id.desc()).limit(5).all()
-    t_logs = [{"name": l.teacher.full_name, "id": l.teacher.employee_id, "dept": l.teacher.department, "entry": l.entry_time, "exit": l.exit_time or "--"} for l in recent_teachers]
+    recent_teachers = teacher_att_query.order_by(models.TeacherAttendance.id.desc()).limit(limit).all()
+    t_logs = [{"db_id": l.teacher.id, "name": l.teacher.full_name, "id": l.teacher.employee_id, "dept": l.teacher.department, "entry": l.entry_time, "exit": l.exit_time or "--"} for l in recent_teachers]
 
-    # 5. Package it all up for React
+    # 6. Package it all up for React
     return {
         "students": {
             "total": total_students, 
@@ -682,6 +733,78 @@ def get_live_qr():
     current_code = totp.now()
     return {"qr_string": f"ATTENDEASE-{current_code}"}
 
+@app.get("/teacher/shift-status")
+def get_shift_status(email: str, db: Session = Depends(database.get_db)):
+    """Returns the current day's entry and exit time for a given teacher's email."""
+    teacher = db.query(models.Teacher).filter(models.Teacher.email == email).first()
+    if not teacher:
+        raise HTTPException(status_code=404, detail="Teacher not found")
+    
+    today = datetime.now().strftime("%Y-%m-%d")
+    log = db.query(models.TeacherAttendance).filter(
+        models.TeacherAttendance.teacher_id == teacher.id,
+        models.TeacherAttendance.date == today
+    ).first()
+    
+    if not log:
+        return {"entry_time": None, "exit_time": None, "status": "not_started"}
+    
+    return {
+        "entry_time": log.entry_time,
+        "exit_time": log.exit_time,
+        "status": "completed" if log.exit_time else "signed_in"
+    }
+
+@app.post("/teacher/sign-out")
+async def teacher_sign_out(file: UploadFile = File(...), db: Session = Depends(database.get_db)):
+    """Face-verified sign-out for teachers, called from the Dashboard."""
+    file_bytes = await file.read()
+    try:
+        image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
+        img_array = np.array(image)
+        img_cv2 = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+        img_cv2_enhanced = enhance_lighting(img_cv2)
+        rgb_enhanced = cv2.cvtColor(img_cv2_enhanced, cv2.COLOR_BGR2RGB)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid image format")
+
+    small_frame = cv2.resize(rgb_enhanced, (0, 0), fx=0.5, fy=0.5)
+    unknown_encodings = face_recognition.face_encodings(small_frame)
+    if not unknown_encodings:
+        raise HTTPException(status_code=404, detail="No face detected. Please look directly at the camera.")
+
+    unknown_encoding = unknown_encodings[0]
+    TOLERANCE = 0.55
+
+    for teacher in db.query(models.Teacher).all():
+        if not teacher.face_encoding:
+            continue
+        try:
+            known_encoding = np.array(json.loads(teacher.face_encoding))
+            distance = face_recognition.face_distance([known_encoding], unknown_encoding)[0]
+            if distance <= TOLERANCE:
+                today = datetime.now().strftime("%Y-%m-%d")
+                current_time = datetime.now().strftime("%I:%M %p")
+                log = db.query(models.TeacherAttendance).filter(
+                    models.TeacherAttendance.teacher_id == teacher.id,
+                    models.TeacherAttendance.date == today
+                ).first()
+
+                if not log:
+                    raise HTTPException(status_code=400, detail="You have not signed in today. Please sign in at the kiosk first.")
+                if log.exit_time:
+                    raise HTTPException(status_code=400, detail=f"Shift already completed at {log.exit_time}.")
+
+                log.exit_time = current_time
+                db.commit()
+                return {"status": "success", "name": teacher.full_name, "exit_time": current_time, "message": "Shift Complete. Have a great day!"}
+        except HTTPException:
+            raise
+        except Exception:
+            continue
+
+    raise HTTPException(status_code=404, detail="Face not recognized. Please try again.")
+
 # --- 2. The Verification & Database Route ---
 @app.post("/attendance/qr-mark")
 def mark_qr_attendance(data: QRSubmit, db: Session = Depends(database.get_db)):
@@ -730,3 +853,23 @@ def mark_qr_attendance(data: QRSubmit, db: Session = Depends(database.get_db)):
     
     print(f"✅ SUCCESS: {student.full_name} marked present via GPS/QR!")
     return {"status": "success", "message": "Attendance marked securely.", "distance_meters": int(distance)}
+
+@app.get("/teacher/recent-attendance")
+def get_recent_attendance(last_id: int = 0, db: Session = Depends(database.get_db)):
+    today = datetime.now().strftime("%Y-%m-%d")
+    recent = db.query(models.Attendance).filter(
+        models.Attendance.date == today,
+        models.Attendance.id > last_id
+    ).all()
+    
+    results = []
+    for record in recent:
+        student = db.query(models.Student).filter(models.Student.id == record.student_id).first()
+        if student:
+            results.append({
+                "id": record.id,
+                "student_name": student.full_name,
+                "time": record.time,
+                "status": record.status
+            })
+    return results

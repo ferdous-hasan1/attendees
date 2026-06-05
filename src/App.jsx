@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios'; // <-- Exactly ONE import, right at the top!
 
-import Sidebar from './components/Sidebar';
+// Make sure your Sidebar file contains the new ResponsiveNavigation code!
+import Sidebar from './components/Sidebar'; 
 import Header from './components/Header';
 import Landing from './pages/Landing';
 import Login from './pages/Login';
@@ -31,12 +32,12 @@ const App = () => {
     const isLoggedIn = localStorage.getItem('isLoggedIn');
     const savedRole = localStorage.getItem('userRole');
     const savedEmail = localStorage.getItem('userEmail');
-if (isLoggedIn && savedRole) {
+    if (isLoggedIn && savedRole) {
       setUserRole(savedRole);
       setUserEmail(savedEmail);
       setCurrentView('app');
       
-      // 👇 FIXED: Everyone lands on their respective Overview first!
+      // Everyone lands on their respective Overview first!
       setActiveTab('dashboard'); 
     }
   }, []);
@@ -53,17 +54,14 @@ if (isLoggedIn && savedRole) {
     setUserEmail(email); 
     setCurrentView('app');
     
-    // 👇 FIXED: Everyone lands on their respective Overview first!
     setActiveTab('dashboard');
 
-    // Save these to local storage so a refresh doesn't wipe them out
     localStorage.setItem('userRole', role);
     localStorage.setItem('userEmail', email);
     localStorage.setItem('isLoggedIn', 'true');
   };
 
   const handleLogout = () => {
-    // 👇 NEW: Clear all user traces
     localStorage.removeItem('adminToken'); 
     localStorage.removeItem('userRole');
     localStorage.removeItem('userEmail');
@@ -80,9 +78,10 @@ if (isLoggedIn && savedRole) {
   if (currentView === 'kiosk') return <Kiosk onExit={() => setCurrentView('landing')} />;
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
+    // 👇 FIXED: Removed md:flex-row to enforce vertical layout on all screens with the bottom dock
+    <div className="flex flex-col h-screen w-full bg-slate-50 font-sans text-slate-900 overflow-hidden">
       
-      {/* 🧭 SIDEBAR NAVIGATION */}
+      {/* 🧭 NAVIGATION: Automatically switches between Bottom Nav and Sidebar */}
       <Sidebar 
         activeTab={activeTab} 
         setActiveTab={setActiveTab} 
@@ -90,28 +89,31 @@ if (isLoggedIn && savedRole) {
         onLogout={handleLogout}
       />
       
-      <div className="flex-1 flex flex-col overflow-hidden relative">
+      {/* 👇 FIXED: Added universal pb-20 to push content up so it isn't hidden behind the universal bottom nav bar. */}
+      <div className="flex-1 flex flex-col overflow-hidden relative pb-20 w-full">
         
         {/* 🏷️ TOP HEADER */}
         <Header 
-            title={activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} 
-            toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+            title={activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace('-', ' ')} 
+            onLogout={handleLogout}
+            onNavigate={setActiveTab}
+            userRole={userRole}
         />
         
         {/* ✨ ANIMATED MAIN CONTENT AREA */}
-        <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-50/50">
+        <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-50/50 flex flex-col">
           <AnimatePresence mode="wait">
             <motion.div
-              key={activeTab} // This is the magic key that triggers the animation!
+              key={activeTab} 
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.25, ease: "easeOut" }}
-              className="min-h-full"
+              className="flex-1 flex flex-col min-h-full"
             >
               {/* 🚦 THE TRAFFIC COP: Strictly one dashboard per role */}
               {activeTab === 'dashboard' && (userRole === 'admin' || userRole === 'teacher') && (
-                 <Dashboard role={userRole} />
+                 <Dashboard role={userRole} userEmail={userEmail} />
               )}
               
               {activeTab === 'dashboard' && userRole === 'student' && (
@@ -120,14 +122,16 @@ if (isLoggedIn && savedRole) {
 
               {/* --- KIOSK / LIVE CAMERA --- */}
               {activeTab === 'live' && (
-                 <div className="h-[calc(100vh-4rem)] w-full flex items-center justify-center bg-black">
+                 // 👇 FIXED: Made this flex-1 so it automatically fills the screen minus the header and bottom nav!
+                 <div className="flex-1 w-full flex items-center justify-center bg-black min-h-[50vh]">
                      <Kiosk onExit={() => setActiveTab('dashboard')} />
                  </div>
               )}
 
               {/* --- DATA MANAGEMENT --- */}
               {activeTab === 'records' && <Records showToast={showToast} />}
-              {activeTab === 'settings' && <Settings showToast={showToast} userRole={userRole} />}
+              {/* Change this line: */}
+              {activeTab === 'settings' && <Settings showToast={showToast} userRole={userRole} userEmail={userEmail} />}
               {activeTab === 'students' && <Students showToast={showToast} />}
               
               {userRole === 'admin' && activeTab === 'teachers' && (
@@ -136,7 +140,6 @@ if (isLoggedIn && savedRole) {
 
               {/* --- NEW QR & STUDENT PORTAL ROUTES --- */}
               {activeTab === 'teacher-qr' && <TeacherQR />}
-              {/* 👇 THE FIX: Pass the userEmail into the portal! 👇 */}
               {activeTab === 'student-portal' && <StudentPortal userEmail={userEmail} />}
               
             </motion.div>
