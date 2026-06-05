@@ -24,7 +24,7 @@ function Records({ showToast }) {
     setLoading(true);
     try {
       // ✅ FIXED: Using dynamic hostname so it never breaks on new Wi-Fi
-      const response = await axios.get(`http://${window.location.hostname}:8000/records`);
+      const response = await axios.get('/records');
       setRecords(response.data);
     } catch (error) {
       console.error("Error fetching records:", error);
@@ -46,7 +46,7 @@ function Records({ showToast }) {
         if (showToast) showToast(`Generating ${format.toUpperCase()}...`, "info");
 
         // ✅ FIXED: Using Axios to fetch the file as a Blob (Binary Data)
-        const response = await axios.get(`http://${window.location.hostname}:8000/records/export?format=${format}`, {
+        const response = await axios.get(`/records/export?format=${format}`, {
             responseType: 'blob' 
         });
 
